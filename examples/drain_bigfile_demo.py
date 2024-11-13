@@ -14,15 +14,8 @@ from drain3.template_miner_config import TemplateMinerConfig
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(message)s')
 
-in_gz_file = "SSH.tar.gz"
-in_log_file = "SSH.log"
-if not os.path.isfile(in_log_file):
-    logger.info(f"Downloading file {in_gz_file}")
-    p = subprocess.Popen(f"curl https://zenodo.org/record/3227177/files/{in_gz_file} --output {in_gz_file}", shell=True)
-    p.wait()
-    logger.info(f"Extracting file {in_gz_file}")
-    p = subprocess.Popen(f"tar -xvzf {in_gz_file}", shell=True)
-    p.wait()
+
+in_log_file = "0-filtered.txt"
 
 
 config = TemplateMinerConfig()
@@ -41,7 +34,7 @@ batch_size = 10000
 
 for line in lines:
     line = line.rstrip()
-    line = line.partition(": ")[2]
+    #line = line.partition(": ")[2]
     result = template_miner.add_log_message(line)
     line_count += 1
     if line_count % batch_size == 0:
