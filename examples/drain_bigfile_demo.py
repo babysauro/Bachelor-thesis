@@ -54,8 +54,8 @@ lines = [
 ]
 
 #Dizionario per raccogliere i templates
-templates = {}
-template_count = {}
+#templates = {}
+#template_count = {}
 
 for line in lines:
     line = line.rstrip()
@@ -64,19 +64,19 @@ for line in lines:
     line_count += 1
 
     #Controllo se il risultato contiene un template
-    if result["change_type"] != "none":
-        template_message = result["template_mined"]
-        cluster_id = f"cluster_{len(templates) + 1}"
+    #if result["change_type"] != "none":
+        #template_message = result["template_mined"]
+        #cluster_id = f"cluster_{len(templates) + 1}"
     
     #Se il template non è presente in templates
-    if cluster_id not in templates:
-        templates[cluster_id] = []
-        template_count[cluster_id] = 0
+    #if cluster_id not in templates:
+        #templates[cluster_id] = []
+        #template_count[cluster_id] = 0
 
     #Aggiunta template al cluster
-    templates[cluster_id].append(template_message)
+    #templates[cluster_id].append(template_message)
     #Incremento del contatore per questo cluster
-    template_count[cluster_id] +=1
+    #template_count[cluster_id] +=1
 
     if line_count % batch_size == 0:
         time_took = time.time() - batch_start_time
@@ -90,9 +90,9 @@ for line in lines:
         logger.info(f"Result: {result_json}")
 
 #Stampa il numero di template
-print("Numero di template per cluster:")
-for cluster_id, count in template_count.items():
-    print(f"{cluster_id}: {count} template")
+#print("Numero di template per cluster:")
+#for cluster_id, count in template_count.items():
+    #print(f"{cluster_id}: {count} template")
 
 time_took = time.time() - start_time
 rate = line_count / time_took
@@ -112,13 +112,13 @@ template_miner.profiler.report(0)
 print(f"Found {txt_file_count} .txt files")
 
 #Scrittura dei template nel file templates.txt
-with open('templates.txt', 'w') as txt_file:
-    for cluster, template_list in templates.items():
-        txt_file.write(f"{cluster}:\n")
-        for template in template_list:
-            txt_file.write(f"  - {template}\n")
-        txt_file.write("\n")
+#with open('templates.txt', 'w') as txt_file:
+    #for cluster, template_list in templates.items():
+        #txt_file.write(f"{cluster}:\n")
+        #for template in template_list:
+            #txt_file.write(f"  - {template}\n")
+        #txt_file.write("\n")
 
-print("File txt creato con successo")
+#print("File txt creato con successo")
 
 

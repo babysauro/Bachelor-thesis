@@ -2,6 +2,7 @@
 # This file implements the Drain algorithm for log parsing.
 # Based on https://github.com/logpai/logparser/blob/master/logparser/Drain/Drain.py by LogPAI team
 
+import re
 from abc import ABC, abstractmethod
 from typing import cast, Collection, IO, Iterable, MutableMapping, MutableSequence, Optional, Sequence, Tuple, \
     TYPE_CHECKING, TypeVar, Union
@@ -411,6 +412,15 @@ class Drain(DrainBase):
         ret_val = float(sim_tokens) / len(seq1)
 
         return ret_val, param_count
+    
+    #Questa funzione verifica se un dato token è un URl utilizzando una regex.
+    def is_url(self, token: str) -> bool:
+        """
+        Check if the token is a URL using a simple regex.
+        """
+        url_regex = re.compile(r'^/(apis|api)/[a-zA-Z0-9\-_.]+/[a-zA-Z0-9\-_.]+(/namespaces/[a-zA-Z0-9\-_.]+)?(/.*)?$')
+        return re.match(url_regex, token) is not None
+    
 
     def create_template(self, seq1: Sequence[str], seq2: Sequence[str]) -> Sequence[str]:
         """
@@ -422,7 +432,12 @@ class Drain(DrainBase):
         :return: template sequence with param_str in place of unmatched tokens
         """
         assert len(seq1) == len(seq2)
-        return [token2 if token1 == token2 else self.param_str for token1, token2 in zip(seq1, seq2)]
+        #Durante la creazione del template, se un token è un URl, non viene sotituito
+        #con il parametro, ma viene lasciato invariato
+        return [
+        token2 if token1 == token2 or self.is_url(token2) else self.param_str
+        for token1, token2 in zip(seq1, seq2)
+    ]
 
     def match(self, content: str, full_search_strategy: str = "never") -> Optional[LogCluster]:
         """
