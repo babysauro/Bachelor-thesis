@@ -10,7 +10,9 @@ from typing import cast, Collection, IO, Iterable, MutableMapping, MutableSequen
 from cachetools import LRUCache, Cache
 
 from drain3.simple_profiler import Profiler, NullProfiler
+#from log_masker import LogMacker 
 
+#log_masker = LogMasker(masking_instructions, mask_prefix="<:", mask_suffix=":>")
 
 class LogCluster:
     __slots__ = ["log_template_tokens", "cluster_id", "size"]
@@ -186,6 +188,14 @@ class DrainBase(ABC):
         content_tokens = content.split()
         return content_tokens
 
+    """
+        Il log in input viene preso ed analizzato con un cluster esistente.
+        Se non vi è nessuna corrispondenza, allora il cluster_count viene incrementato
+        altrimenti la funzione cerca un cluster esistente che corrisponda:
+        se la similarità del log rispetto al cluster esistente supera la soglia di similarità
+        non viene creato un nuovo cluster quindi cluster_count non viene incrementato.
+        Aumenta però la dimensione del cluster esistente
+    """
     def add_log_message(self, content: str) -> Tuple[LogCluster, str]:
         content_tokens = self.get_content_as_tokens(content)
 
@@ -414,13 +424,14 @@ class Drain(DrainBase):
         return ret_val, param_count
     
     #Questa funzione verifica se un dato token è un URl utilizzando una regex.
-    def is_url(self, token: str) -> bool:
-        """
+    """def is_url(self, token: str) -> bool:
+        
         Check if the token is a URL using a simple regex.
-        """
-        url_regex = re.compile(r'^/(apis|api)/[a-zA-Z0-9\-_.]+/[a-zA-Z0-9\-_.]+(/namespaces/[a-zA-Z0-9\-_.]+)?(/.*)?$')
-        return re.match(url_regex, token) is not None
-    
+        
+        #print(f"Checking if token is URL: {token}")
+        url_regex = re.compile(r'^"\/(apis|api|readyz)/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)/?(.*)?$')
+        return re.match(url_regex, token) is not None"""
+
 
     def create_template(self, seq1: Sequence[str], seq2: Sequence[str]) -> Sequence[str]:
         """
@@ -434,10 +445,12 @@ class Drain(DrainBase):
         assert len(seq1) == len(seq2)
         #Durante la creazione del template, se un token è un URl, non viene sotituito
         #con il parametro, ma viene lasciato invariato
-        return [
-        token2 if token1 == token2 or self.is_url(token2) else self.param_str
+        
+        """return [
+        token2 if self.is_url(token2) else (token2 if token1 == token2 else self.param_str)
         for token1, token2 in zip(seq1, seq2)
-    ]
+        ]"""
+        return [token2 if token1 == token2 else self.param_str for token1, token2 in zip(seq1, seq2)]
 
     def match(self, content: str, full_search_strategy: str = "never") -> Optional[LogCluster]:
         """

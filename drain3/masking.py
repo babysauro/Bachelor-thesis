@@ -55,6 +55,9 @@ class LogMasker:
         self.mask_name_to_instructions = mask_name_to_instructions
 
     def mask(self, content: str) -> str:
+        """# Controlla se il contenuto contiene un URL
+        if re.search(r'\/[^"\s]+', content):
+            return content  # Restituisce il contenuto originale se ci sono URL"""
         for mi in self.masking_instructions:
             content = mi.mask(content, self.mask_prefix, self.mask_suffix)
         return content
@@ -65,6 +68,7 @@ class LogMasker:
 
     def instructions_by_mask_name(self, mask_name: str) -> Collection[AbstractMaskingInstruction]:
         return cast(Collection[AbstractMaskingInstruction], self.mask_name_to_instructions.get(mask_name, []))
+
 
 # Some masking examples
 # ---------------------

@@ -24,7 +24,7 @@ config.profiling_enabled = True
 template_miner = TemplateMiner(config=config)
 
 line_count = 0
-txt_file_count = 0 
+#txt_file_count = 0 
 
 lines=[]
 
@@ -38,7 +38,7 @@ for root, dirs, files in os.walk(in_log_file):
             if file.endswith(".txt") and "filtered" in file:
              with open(os.path.join(root, file)) as f:
                 lines.append(f.readlines())
-                txt_file_count += 1
+                #txt_file_count += 1
 
 
 
@@ -109,7 +109,7 @@ template_miner.drain.print_tree()
 template_miner.profiler.report(0)
 
 #Stampa numero di file txt
-print(f"Found {txt_file_count} .txt files")
+#print(f"Found {txt_file_count} .txt files")
 
 #Scrittura dei template nel file templates.txt
 #with open('templates.txt', 'w') as txt_file:
