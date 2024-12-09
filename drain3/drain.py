@@ -424,13 +424,13 @@ class Drain(DrainBase):
         return ret_val, param_count
     
     #Questa funzione verifica se un dato token è un URl utilizzando una regex.
-    """def is_url(self, token: str) -> bool:
+    # def is_url(self, token: str) -> bool:
         
-        Check if the token is a URL using a simple regex.
+    #     #Check if the token is a URL using a simple regex.
         
-        #print(f"Checking if token is URL: {token}")
-        url_regex = re.compile(r'^"\/(apis|api|readyz)/([a-zA-Z0-9._-]+)/([a-zA-Z0-9._-]+)/?(.*)?$')
-        return re.match(url_regex, token) is not None"""
+    #     #print(f"Checking if token is URL: {token}")
+    #     url_regex = re.compile(r'^(/(?:[a-zA-Z0-9\-\._~%!$&\'()*+,;=]+)?(?:/[^?]*)?)(\?[^"]*)?$', re.IGNORECASE)
+    #     return re.match(url_regex, token) is not None
 
 
     def create_template(self, seq1: Sequence[str], seq2: Sequence[str]) -> Sequence[str]:
@@ -443,14 +443,13 @@ class Drain(DrainBase):
         :return: template sequence with param_str in place of unmatched tokens
         """
         assert len(seq1) == len(seq2)
-        #Durante la creazione del template, se un token è un URl, non viene sotituito
-        #con il parametro, ma viene lasciato invariato
-        
-        """return [
-        token2 if self.is_url(token2) else (token2 if token1 == token2 else self.param_str)
-        for token1, token2 in zip(seq1, seq2)
-        ]"""
+
         return [token2 if token1 == token2 else self.param_str for token1, token2 in zip(seq1, seq2)]
+        # return [
+        # token2 if token1 == token2 or self.is_url(token2) 
+        # else self.param_str
+        #     for token1, token2 in zip(seq1, seq2)
+        # ]
 
     def match(self, content: str, full_search_strategy: str = "never") -> Optional[LogCluster]:
         """

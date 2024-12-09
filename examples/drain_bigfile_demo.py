@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+import re
 from os.path import dirname
 
 from drain3 import TemplateMiner
@@ -15,7 +16,8 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(message)s')
 
 #Path verso la cartella contenente tutti i log
-in_log_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered/999_99_apiserver_etcd_subset"
+in_log_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered"
+
 
 
 config = TemplateMinerConfig()
@@ -28,17 +30,27 @@ line_count = 0
 
 lines=[]
 
+# Regex per catturare fino a srcIP
+# src_ip_regex = re.compile(r'^(.*?srcIP="[^"]*")')
+
+# Regex per catturare fino a userAgent
+user_agent_regex = re.compile(r'^(.*?userAgent="[^"]*")')
+
 #Si esplorano le cartelle e sotto-cartelle fino a trovare file .txt, dopodiché avviene la lettura del file
+#In più viene chiamata la funzione di tokenizzazione dei campi non necessari.
 for root, dirs, files in os.walk(in_log_file):
     #print(root, files)
-    if "deploy" in root:
-        #print(f"Found 'deploy' in path: {root}")
-        for file in files:
-            #Filtraggio dei file .txt il cui nome contiene "filtered"
-            if file.endswith(".txt") and "filtered" in file:
-             with open(os.path.join(root, file)) as f:
-                lines.append(f.readlines())
-                #txt_file_count += 1
+    if "999_99" in root:
+        if "deploy" in root:
+         #print(f"Found 'deploy' in path: {root}")
+             for file in files:
+                #Filtraggio dei file .txt il cui nome contiene "filtered"
+                if file.endswith(".txt") and "filtered" in file:
+                    with open(os.path.join(root, file)) as f:
+                        for line in f:
+                            lines.append(f.readlines())
+                            #txt_file_count += 1
+                
 
 
 
@@ -59,6 +71,11 @@ lines = [
 
 for line in lines:
     line = line.rstrip()
+    # Applicazione del regex per tagliare
+    match = user_agent_regex.match(line)
+    if match:
+      line = match.group(1)
+
     #line = line.partition(": ")[2]
     result = template_miner.add_log_message(line)
     line_count += 1
@@ -84,6 +101,7 @@ for line in lines:
         logger.info(f"Processing line: {line_count}, rate {rate:.1f} lines/sec, "
                     f"{len(template_miner.drain.clusters)} clusters so far.")
         batch_start_time = time.time()
+
     if result["change_type"] != "none":
         result_json = json.dumps(result)
         logger.info(f"Input ({line_count}): {line}")
@@ -99,6 +117,7 @@ rate = line_count / time_took
 logger.info(f"--- Done processing file in {time_took:.2f} sec. Total of {line_count} lines, rate {rate:.1f} lines/sec, "
             f"{len(template_miner.drain.clusters)} clusters")
 
+# Stampa dei clusters creati
 sorted_clusters = sorted(template_miner.drain.clusters, key=lambda it: it.size, reverse=True)
 for cluster in sorted_clusters:
     logger.info(cluster)
