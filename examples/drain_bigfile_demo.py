@@ -15,86 +15,86 @@ from drain3.template_miner_config import TemplateMinerConfig
 logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(message)s')
 
-#Path verso la cartella contenente tutti i log
+# Path verso la cartella contenente tutti i log
 in_log_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered"
 
-
+# Path verso il file delle classificazioni
+classif_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered/classif_new_updated.txt"
 
 config = TemplateMinerConfig()
 config.load(f"{dirname(__file__)}/drain3.ini")
 config.profiling_enabled = True
 template_miner = TemplateMiner(config=config)
 
-line_count = 0
-#txt_file_count = 0 
-
-lines=[]
-
-# Regex per catturare fino a srcIP
-# src_ip_regex = re.compile(r'^(.*?srcIP="[^"]*")')
+line_count = 0 
+lines = []
 
 # Regex per catturare fino a userAgent
 user_agent_regex = re.compile(r'^(.*?userAgent="[^"]*")')
 
-#Si esplorano le cartelle e sotto-cartelle fino a trovare file .txt, dopodiché avviene la lettura del file
-#In più viene chiamata la funzione di tokenizzazione dei campi non necessari.
+# Dizionario per mappare i codici di fault alle descrizioni
+fault_mapping = {
+    "A": "no_failure",
+    "B": "timing",
+    "C": "more_resources",
+    "D": "less_resources",
+    "E": "network",
+    "F": "stallo",
+    "G": "outage_totale"
+}
+
+# Creazione di un dizionario per mappare il nome dell'esperimento al faultCode
+experiment_map = {}
+with open(classif_file, "r") as f:
+    for line in f:
+        path, fault_code = line.strip().split()
+        # Associa il nome del file all'errore
+        experiment_map[os.path.basename(path)] = fault_mapping.get(fault_code, "Unknown")
+
+# Leggi le cartelle da esplorare dal file di classificazione
+folders_to_explore = set(experiment_map.keys())
+
+# Si esplorano le cartelle e sotto-cartelle fino a trovare file .txt, dopodiché avviene la lettura del file
 for root, dirs, files in os.walk(in_log_file):
-    #print(root, files)
-    if "999_99" in root:
-        if "deploy" in root:
-         #print(f"Found 'deploy' in path: {root}")
-             for file in files:
-                #Filtraggio dei file .txt il cui nome contiene "filtered"
-                if file.endswith(".txt") and "filtered" in file:
-                    with open(os.path.join(root, file)) as f:
-                        for line in f:
-                            lines.append(f.readlines())
-                            #txt_file_count += 1
-                
-
-
+    # Controlla se il percorso corrente contiene una delle cartelle da esplorare
+    if any(folder in root for folder in folders_to_explore):
+        for file in files:
+            # Filtraggio dei file .txt il cui nome contiene "filtered"
+            if file.endswith(".txt") and "filtered" in file:
+                experiment_name = os.path.basename(os.path.dirname(os.path.dirname(root)))
+                with open(os.path.join(root, file)) as f:
+                    for line in f:
+                        lines.extend([(line.strip(), experiment_name) for line in f])
+                        #logger.info(f"Esperimento trovato: {experiment_name}, Path: {root}")
 
 start_time = time.time()
 batch_start_time = start_time
 batch_size = 100000
 
-#Filtraggio nell'array
-lines = [
-    x
-    for xs in lines
-    for x in xs
-]
+# Filtraggio nell'array
+# lines = [
+#     x
+#     for xs in lines
+#     for x in xs
+# ]
 
-#Dizionario per raccogliere i templates
-#templates = {}
-#template_count = {}
 
-for line in lines:
+# Struttura per raccogliere i dati della tabella
+table_data = {}
+
+
+for line, experiment_name in lines:
     line = line.rstrip()
-    # Applicazione del regex per tagliare
     match = user_agent_regex.match(line)
     if match:
-      line = match.group(1)
+        line = match.group(1)
+    
 
-    #line = line.partition(": ")[2]
+    # Aggiungi il log al miner per il template
     result = template_miner.add_log_message(line)
     line_count += 1
 
-    #Controllo se il risultato contiene un template
-    #if result["change_type"] != "none":
-        #template_message = result["template_mined"]
-        #cluster_id = f"cluster_{len(templates) + 1}"
-    
-    #Se il template non è presente in templates
-    #if cluster_id not in templates:
-        #templates[cluster_id] = []
-        #template_count[cluster_id] = 0
-
-    #Aggiunta template al cluster
-    #templates[cluster_id].append(template_message)
-    #Incremento del contatore per questo cluster
-    #template_count[cluster_id] +=1
-
+    # Controllo batch per la velocità di elaborazione
     if line_count % batch_size == 0:
         time_took = time.time() - batch_start_time
         rate = batch_size / time_took
@@ -107,10 +107,26 @@ for line in lines:
         logger.info(f"Input ({line_count}): {line}")
         logger.info(f"Result: {result_json}")
 
-#Stampa il numero di template
-#print("Numero di template per cluster:")
-#for cluster_id, count in template_count.items():
-    #print(f"{cluster_id}: {count} template")
+    # Raccogli i dati per la tabella
+    for cluster in template_miner.drain.clusters:
+        cluster_id = cluster.cluster_id
+        fault_code = experiment_map.get(experiment_name, "Unknown")
+
+        # Inizializza il cluster se non esiste
+        if cluster_id not in table_data:
+            table_data[cluster_id] = {
+                'experiments': {},
+                'fault_codes': set(),
+                'total_count': 0
+            }
+
+        # Aggiungi o aggiorna l'esperimento per questo cluster
+        if experiment_name not in table_data[cluster_id]['experiments']:
+            table_data[cluster_id]['experiments'][experiment_name] = 0
+        
+        table_data[cluster_id]['experiments'][experiment_name] += 1
+        table_data[cluster_id]['fault_codes'].add(fault_code)
+        table_data[cluster_id]['total_count'] += 1
 
 time_took = time.time() - start_time
 rate = line_count / time_took
@@ -127,17 +143,35 @@ template_miner.drain.print_tree()
 
 template_miner.profiler.report(0)
 
-#Stampa numero di file txt
-#print(f"Found {txt_file_count} .txt files")
+# Stampa tabella nel file cluster_analysis_report
+script_dir = os.path.dirname(os.path.abspath(__file__))
+output_file = os.path.join(script_dir, 'cluster_analysis_report.txt')
 
-#Scrittura dei template nel file templates.txt
-#with open('templates.txt', 'w') as txt_file:
-    #for cluster, template_list in templates.items():
-        #txt_file.write(f"{cluster}:\n")
-        #for template in template_list:
-            #txt_file.write(f"  - {template}\n")
-        #txt_file.write("\n")
+with open(output_file, 'w') as f:
+    f.write("Cluster Analysis Report\n")
+    f.write("-------------------\n")
 
-#print("File txt creato con successo")
+    # Ottieni la lista dei cluster ID
+    cluster_ids = set()
+    for experiment in table_data.values():
+        cluster_ids.update(experiment.keys())
+    cluster_ids = sorted(list(cluster_ids))
 
+    # Scrivi la tabella
+    f.write("  |")
+    for cluster_id in cluster_ids:
+        f.write(f"{cluster_id}\t")
+    f.write("Fault Code\n")
+    f.write("-" * (len(cluster_ids) * 10 + 20) + "\n")
 
+    for experiment, clusters in table_data.items():
+        fault_code = experiment_map.get(experiment, "Unknown")
+        f.write(f"{experiment}\t")
+        for cluster_id in cluster_ids:
+            if cluster_id in clusters:
+                f.write(f"{clusters[cluster_id]}\t")
+            else:
+                f.write("0\t")
+        f.write(f"{fault_code}\n")
+
+logger.info(f"Cluster analysis report saved to {output_file}")
