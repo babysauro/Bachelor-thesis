@@ -7,6 +7,9 @@ import subprocess
 import sys
 import time
 import re
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 from os.path import dirname
 
 from drain3 import TemplateMiner
@@ -49,7 +52,7 @@ with open(classif_file, "r") as f:
     for line in f:
         path, fault_code = line.strip().split()
         # Associa il nome del file all'errore
-        experiment_map[os.path.basename(path)] = fault_mapping.get(fault_code, "Unknown")
+        experiment_map[os.path.basename(path)] = fault_mapping.get(fault_code)
 
 # Leggi le cartelle da esplorare dal file di classificazione
 folders_to_explore = set(experiment_map.keys())
@@ -62,10 +65,15 @@ for root, dirs, files in os.walk(in_log_file):
             # Filtraggio dei file .txt il cui nome contiene "filtered"
             if file.endswith(".txt") and "filtered" in file:
                 experiment_name = os.path.basename(os.path.dirname(os.path.dirname(root)))
+                # experiment_name = os.path.join(
+                #     os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(root)))),  # Livello superiore (es. 999_99_apiserver_etcd_subset)
+                #     os.path.basename(os.path.dirname(os.path.dirname(root)))) # Nome dell'esperimento (es. 100_deploy)
+                if experiment_name not in experiment_map:
+                    continue  # Salta esperimenti non mappati
                 with open(os.path.join(root, file)) as f:
                     for line in f:
                         lines.extend([(line.strip(), experiment_name) for line in f])
-                        #logger.info(f"Esperimento trovato: {experiment_name}, Path: {root}")
+
 
 start_time = time.time()
 batch_start_time = start_time
@@ -110,7 +118,7 @@ for line, experiment_name in lines:
     # Raccogli i dati per la tabella
     for cluster in template_miner.drain.clusters:
         cluster_id = cluster.cluster_id
-        fault_code = experiment_map.get(experiment_name, "Unknown")
+        fault_code = experiment_map.get(experiment_name)
 
         # Inizializza il cluster se non esiste
         if cluster_id not in table_data:
@@ -128,10 +136,111 @@ for line, experiment_name in lines:
         table_data[cluster_id]['fault_codes'].add(fault_code)
         table_data[cluster_id]['total_count'] += 1
 
+
 time_took = time.time() - start_time
 rate = line_count / time_took
 logger.info(f"--- Done processing file in {time_took:.2f} sec. Total of {line_count} lines, rate {rate:.1f} lines/sec, "
             f"{len(template_miner.drain.clusters)} clusters")
+
+# Funzioni per dedurre workload e componente iniettato -> grafico
+def infer_workload(experiment_name):
+    if "deploy" in experiment_name:
+        return "Deployment"
+    elif "scale" in experiment_name:
+        return "Scaling"
+    return "Available"
+
+def infer_injected_component(experiment_name):
+    if "etcd" in experiment_name:
+        return "etcd"
+    elif "apiserver" in experiment_name:
+        return "apiserver"
+    return "Unknown"
+
+# GRAFICO
+# Preparazione i dati per il grafico
+plot_data = []
+
+for cluster_id, cluster_data in table_data.items():
+    for experiment, count in cluster_data['experiments'].items():
+        fault_code = experiment_map.get(experiment)
+        plot_data.append({
+            'cluster_id': cluster_id,
+            'experiment': experiment,
+            'fault_code': fault_code,
+            'count': count,
+            'workload': infer_workload(experiment),
+            'injected_component': infer_injected_component(experiment)
+        })
+
+# Conversione in DataFrame per analisi e grafico
+df = pd.DataFrame(plot_data)
+
+# GRAFICO 1: Distribuzione per tipo di fault e workload
+plt.figure(figsize=(12, 8))
+sns.boxplot(x='fault_code', y='count', hue='workload', data=df, palette="Set3")
+plt.title('Distribuzione delle Occorrenze di Log per Tipo di Fault e Workload')
+plt.xlabel('Tipo di Fault')
+plt.ylabel('Numero di Occorrenze di Log')
+plt.xticks(rotation=45)
+plt.legend(title='Workload')
+plt.tight_layout()
+plt.savefig("cluster_fault_workload_analysis.png")
+plt.show()
+
+
+# Creazione della matrice di occorrenze (cluster_id vs fault_code)
+cluster_fault_matrix = df.pivot_table(index='cluster_id', columns='fault_code', values='count', aggfunc='sum', fill_value=0)
+# GRAFICO 2: heatmap
+plt.figure(figsize=(13, 8))
+sns.heatmap(cluster_fault_matrix, cmap="Blues", annot=False, cbar=True)
+plt.title('Distribuzione dei Cluster nei Vari Fault')
+plt.xlabel('Tipo di Fault')
+plt.ylabel('Cluster ID')
+plt.tight_layout()
+plt.savefig("heatmap_clusters_vs_fault.png")
+plt.show()
+
+# GRAFICO 3 : a barre impilate
+# stacked_bar_data = []
+# for cluster_id, cluster_data in table_data.items():
+#     # Creazione di una struttura per ogni cluster
+#     row = {
+#         'cluster_id': cluster_id,
+#         'no_failure': 0,
+#         'timing': 0,
+#         'more_resources': 0,
+#         'less_resources': 0,
+#         'network': 0,
+#         'stallo': 0,
+#         'outage_totale': 0,
+#         'Deployment': 0,
+#         'Scaling': 0,
+#         'Available': 0
+#     }
+#     for experiment, count in cluster_data['experiments'].items():
+#         fault_code = experiment_map.get(experiment)
+#         # Incremento del contatore del fault
+#         if fault_code:
+#             row[fault_code] += count
+#         # Incremento del contatore del workload
+#         workload = infer_workload(experiment)
+#         row[workload] += count
+#     stacked_bar_data.append(row)
+
+# # Conversione in DataFrame per analisi e grafico
+# df_stacked = pd.DataFrame(stacked_bar_data)
+
+# # Creazione del grafico a barre impilate
+# df_stacked.set_index('cluster_id')[['no_failure', 'timing', 'more_resources', 'less_resources', 'network', 'stallo', 'outage_totale']].plot(kind='bar', stacked=True, figsize=(14, 8), cmap="Set2")
+# plt.title('Distribuzione dei Cluster per Tipo di Fault e Workload')
+# plt.xlabel('Cluster ID')
+# plt.ylabel('Numero di Occorrenze')
+# plt.xticks(rotation=90)
+# plt.tight_layout()
+# plt.savefig("stacked_cluster_fault_workload_analysis.png")
+# plt.show()
+
 
 # Stampa dei clusters creati
 sorted_clusters = sorted(template_miner.drain.clusters, key=lambda it: it.size, reverse=True)
@@ -145,7 +254,7 @@ template_miner.profiler.report(0)
 
 # Stampa tabella nel file cluster_analysis_report
 script_dir = os.path.dirname(os.path.abspath(__file__))
-output_file = os.path.join(script_dir, 'cluster_analysis_report.txt')
+output_file = os.path.join(script_dir, 'cluster_analysis_report.cvs')
 
 with open(output_file, 'w') as f:
     f.write("Cluster Analysis Report\n")
@@ -161,17 +270,19 @@ with open(output_file, 'w') as f:
     f.write("  |")
     for cluster_id in cluster_ids:
         f.write(f"{cluster_id}\t")
-    f.write("Fault Code\n")
+    #f.write("Fault Code\n")
     f.write("-" * (len(cluster_ids) * 10 + 20) + "\n")
 
     for experiment, clusters in table_data.items():
-        fault_code = experiment_map.get(experiment, "Unknown")
+        fault_code = experiment_map.get(experiment)
         f.write(f"{experiment}\t")
         for cluster_id in cluster_ids:
             if cluster_id in clusters:
                 f.write(f"{clusters[cluster_id]}\t")
             else:
                 f.write("0\t")
-        f.write(f"{fault_code}\n")
+        #f.write(f"{fault_code}\n")
+
 
 logger.info(f"Cluster analysis report saved to {output_file}")
+
