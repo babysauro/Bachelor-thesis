@@ -35,7 +35,7 @@ lines = []
 # Regex per catturare fino a userAgent
 user_agent_regex = re.compile(r'^(.*?userAgent="[^"]*")')
 
-# Dizionario per mappare i codici di fault alle descrizioni
+# Dizionario per mappare i codici di failure alle descrizioni
 fault_mapping = {
     "A": "no_failure",
     "B": "timing",
@@ -69,7 +69,7 @@ for root, dirs, files in os.walk(in_log_file):
                 #     os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(root)))),  # Livello superiore (es. 999_99_apiserver_etcd_subset)
                 #     os.path.basename(os.path.dirname(os.path.dirname(root)))) # Nome dell'esperimento (es. 100_deploy)
                 if experiment_name not in experiment_map:
-                    continue  # Salta esperimenti non mappati
+                    continue  # Salta gli esperimenti non mappati
                 with open(os.path.join(root, file)) as f:
                     for line in f:
                         lines.extend([(line.strip(), experiment_name) for line in f])
@@ -87,16 +87,27 @@ batch_size = 100000
 # ]
 
 
-# Struttura per raccogliere i dati della tabella
+# Struttura per raccogliere i dati delle tabelle
 table_data = {}
 
 
 for line, experiment_name in lines:
     line = line.rstrip()
     match = user_agent_regex.match(line)
+    user_agent_value = match.group(1) if match else None
     if match:
         line = match.group(1)
     
+    # Estrai il valore di 'verb' e 'userAgent'
+    verb_value = None
+    verb_match = re.search(r'verb="([^"]+)"', line)
+    if verb_match:
+        verb_value = verb_match.group(1)
+
+    user_agent_value = None
+    user_agent_match = re.search(r'userAgent="([^"]+)"', line)
+    if user_agent_match:
+        user_agent_value = user_agent_match.group(1)
 
     # Aggiungi il log al miner per il template
     result = template_miner.add_log_message(line)
@@ -119,14 +130,17 @@ for line, experiment_name in lines:
     for cluster in template_miner.drain.clusters:
         cluster_id = cluster.cluster_id
         fault_code = experiment_map.get(experiment_name)
-
+        
         # Inizializza il cluster se non esiste
         if cluster_id not in table_data:
             table_data[cluster_id] = {
                 'experiments': {},
                 'fault_codes': set(),
-                'total_count': 0
+                'total_count': 0,
+                'verb': verb_value,
+                'userAgent': user_agent_value
             }
+
 
         # Aggiungi o aggiorna l'esperimento per questo cluster
         if experiment_name not in table_data[cluster_id]['experiments']:
@@ -135,6 +149,10 @@ for line, experiment_name in lines:
         table_data[cluster_id]['experiments'][experiment_name] += 1
         table_data[cluster_id]['fault_codes'].add(fault_code)
         table_data[cluster_id]['total_count'] += 1
+
+# Salva i dettagli di verb e userAgent per ogni cluster
+        if cluster_id not in table_data:
+            table_data[cluster_id] = {'verb': verb_value, 'userAgent': user_agent_value}      
 
 
 time_took = time.time() - start_time
@@ -150,14 +168,14 @@ def infer_workload(experiment_name):
         return "Scaling"
     return "Available"
 
-def infer_injected_component(experiment_name):
-    if "etcd" in experiment_name:
-        return "etcd"
-    elif "apiserver" in experiment_name:
-        return "apiserver"
-    return "Unknown"
+# def infer_injected_component(experiment_name):
+#     if "etcd" in experiment_name:
+#         return "etcd"
+#     elif "apiserver" in experiment_name:
+#         return "apiserver"
+#     return "Unknown"
 
-# GRAFICO
+# GRAFICI
 # Preparazione i dati per il grafico
 plot_data = []
 
@@ -170,76 +188,131 @@ for cluster_id, cluster_data in table_data.items():
             'fault_code': fault_code,
             'count': count,
             'workload': infer_workload(experiment),
-            'injected_component': infer_injected_component(experiment)
+            'verb': table_data.get(cluster_id, {}).get('verb'),
+            'userAgent': table_data.get(cluster_id, {}).get('userAgent')
+            #'injected_component': infer_injected_component(experiment)
         })
+        # Estrai i valori di verb e userAgent
+        verb = table_data.get(cluster_id, {}).get('verb')
+        userAgent = table_data.get(cluster_id, {}).get('userAgent')
+
+        # Stampa di verb e userAgent
+        #print(f"Cluster ID: {cluster_id} - Verb: {verb} - UserAgent: {userAgent}")
+        
 
 # Conversione in DataFrame per analisi e grafico
 df = pd.DataFrame(plot_data)
 
-# GRAFICO 1: Distribuzione per tipo di fault e workload
+# GRAFICO 1: Distribuzione per tipo di fault e workload -> boxplot 1
 plt.figure(figsize=(12, 8))
 sns.boxplot(x='fault_code', y='count', hue='workload', data=df, palette="Set3")
-plt.title('Distribuzione delle Occorrenze di Log per Tipo di Fault e Workload')
+plt.title('Distribuzione di Log per Tipo di Fault e Workload')
 plt.xlabel('Tipo di Fault')
-plt.ylabel('Numero di Occorrenze di Log')
+plt.ylabel('Numero di Log')
 plt.xticks(rotation=45)
 plt.legend(title='Workload')
 plt.tight_layout()
-plt.savefig("cluster_fault_workload_analysis.png")
+plt.savefig("cluster_failure_workload_analysis.png")
 plt.show()
 
 
-# Creazione della matrice di occorrenze (cluster_id vs fault_code)
-cluster_fault_matrix = df.pivot_table(index='cluster_id', columns='fault_code', values='count', aggfunc='sum', fill_value=0)
-# GRAFICO 2: heatmap
-plt.figure(figsize=(13, 8))
-sns.heatmap(cluster_fault_matrix, cmap="Blues", annot=False, cbar=True)
-plt.title('Distribuzione dei Cluster nei Vari Fault')
-plt.xlabel('Tipo di Fault')
-plt.ylabel('Cluster ID')
-plt.tight_layout()
-plt.savefig("heatmap_clusters_vs_fault.png")
-plt.show()
+# # # Creazione della matrice di occorrenze (cluster_id vs fault_code)
+# # cluster_fault_matrix = df.pivot_table(index='cluster_id', columns='fault_code', values='count', aggfunc='sum', fill_value=0)
+# # # GRAFICO 2: heatmap
+# # plt.figure(figsize=(13, 8))
+# # sns.heatmap(cluster_fault_matrix, cmap="Blues", annot=False, cbar=True)
+# # plt.title('Distribuzione dei Cluster nei Vari Failure')
+# # plt.xlabel('Tipo di Failure')
+# # plt.ylabel('Cluster ID')
+# # plt.tight_layout()
+# # plt.savefig("heatmap_clusters_vs_failure.png")
+# # plt.show()
 
-# GRAFICO 3 : a barre impilate
-# stacked_bar_data = []
-# for cluster_id, cluster_data in table_data.items():
-#     # Creazione di una struttura per ogni cluster
-#     row = {
-#         'cluster_id': cluster_id,
-#         'no_failure': 0,
-#         'timing': 0,
-#         'more_resources': 0,
-#         'less_resources': 0,
-#         'network': 0,
-#         'stallo': 0,
-#         'outage_totale': 0,
-#         'Deployment': 0,
-#         'Scaling': 0,
-#         'Available': 0
-#     }
-#     for experiment, count in cluster_data['experiments'].items():
-#         fault_code = experiment_map.get(experiment)
-#         # Incremento del contatore del fault
-#         if fault_code:
-#             row[fault_code] += count
-#         # Incremento del contatore del workload
-#         workload = infer_workload(experiment)
-#         row[workload] += count
-#     stacked_bar_data.append(row)
+# #--------------------------------------------------------------------------------------------------------------#
 
-# # Conversione in DataFrame per analisi e grafico
-# df_stacked = pd.DataFrame(stacked_bar_data)
+# # # GRAFICO 3: boxplot di cluster per tipologia di failure (con divisione per workload)
+# # # Calcolo dei primi 20 cluster globalmente in base alla dimensione
+# # all_fault_data_sorted = sorted(template_miner.drain.clusters, key=lambda cluster: cluster.size, reverse=True)
+# # top_n = 20
+# # top_clusters = [cluster.cluster_id for cluster in all_fault_data_sorted[:top_n]]
 
-# # Creazione del grafico a barre impilate
-# df_stacked.set_index('cluster_id')[['no_failure', 'timing', 'more_resources', 'less_resources', 'network', 'stallo', 'outage_totale']].plot(kind='bar', stacked=True, figsize=(14, 8), cmap="Set2")
-# plt.title('Distribuzione dei Cluster per Tipo di Fault e Workload')
-# plt.xlabel('Cluster ID')
-# plt.ylabel('Numero di Occorrenze')
-# plt.xticks(rotation=90)
-# plt.tight_layout()
-# plt.savefig("stacked_cluster_fault_workload_analysis.png")
-# plt.show()
+# # # Lista di tipi di failure
+# # failure_types = ['no_failure', 'timing', 'less_resources', 'more_resources', 'network', 'stallo', 'outage_totale']
+
+# # # Ciclo su ciascun tipo di failure
+# # for failure_type in failure_types:
+# #     # Filtro dei dati per il tipo di failure
+# #     fault_data = df[df['fault_code'] == failure_type]
+    
+# #     # Aggiunta della colonna 'workload' se non esiste già
+# #     if 'workload' not in fault_data.columns:
+# #         fault_data['workload'] = fault_data['experiment'].apply(infer_workload)  # Funzione per inferire il workload
+    
+# #     # Filtro dei dati per includere solo i top 20 cluster
+# #     fault_data_top_clusters = fault_data[fault_data['cluster_id'].isin(top_clusters)]
+    
+# #     # Ordina i cluster per dimensione
+# #     fault_data_top_clusters['cluster_id'] = pd.Categorical(
+# #         fault_data_top_clusters['cluster_id'], categories=top_clusters, ordered=True
+# #     )
+    
+# #     # Creazione del grafico
+# #     plt.figure(figsize=(14, 8))
+# #     sns.boxplot(x='cluster_id', y='count', hue='workload', data=fault_data_top_clusters, palette="Set3")
+# #     plt.title(f'Distribuzione di Cluster per Tipo di Failure: {failure_type.capitalize()} con Workload')
+# #     plt.xlabel('Cluster ID')
+# #     plt.ylabel('Numero Eventi')
+# #     plt.xticks(rotation=45)
+# #     plt.legend(title='Workload', bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, fontsize='small')
+# #     plt.tight_layout()
+# #     plt.savefig(f"{failure_type}_failure_cluster_workload_analysis.png")
+# #     plt.show()
+
+# #--------------------------------------------------------------------------------------------------------------#
+
+# Filtro per verb = 'path' o 'post' e userAgent = 'kube-controller-manager'
+filtered_df = df[
+    (df['verb'].isin(['PATH', 'POST'])) & 
+    (df['userAgent'].str.contains('kube-controller-manager'))
+]
+print(filtered_df)
+
+# GRAFICO 3: boxplot di cluster per tipologia di failure con i nuovi filtri (verb='path' o 'post', userAgent='kube-controller-manager')
+# Calcolo dei cluster unici dopo il filtro (senza limitare a 20)
+unique_clusters = filtered_df['cluster_id'].unique()
+
+# Lista di tipi di failure
+failure_types = ['no_failure', 'timing', 'less_resources', 'more_resources', 'network', 'stallo', 'outage_totale']
+
+# Ciclo su ciascun tipo di failure
+for failure_type in failure_types:
+    # Filtro dei dati per il tipo di failure
+    fault_data = filtered_df[filtered_df['fault_code'] == failure_type]
+    
+    # Aggiunta della colonna 'workload' se non esiste già
+    if 'workload' not in fault_data.columns:
+        fault_data['workload'] = fault_data['experiment'].apply(infer_workload)  # Funzione per inferire il workload
+    
+    # Filtro dei dati per includere solo i cluster unici filtrati
+    fault_data_unique_clusters = fault_data[fault_data['cluster_id'].isin(unique_clusters)]
+    
+    # Ordina i cluster per dimensione
+    fault_data_unique_clusters['cluster_id'] = pd.Categorical(
+        fault_data_unique_clusters['cluster_id'], categories=unique_clusters, ordered=True
+    )
+    
+    # Creazione del grafico
+    plt.figure(figsize=(14, 8))
+    sns.boxplot(x='cluster_id', y='count', hue='workload', data=fault_data_unique_clusters, palette="Set3")
+    plt.title(f'Distribuzione di Cluster per Tipo di Failure: {failure_type.capitalize()} con Workload (Verb e UserAgent Filtrati)')
+    plt.xlabel('Cluster ID')
+    plt.ylabel('Numero Eventi')
+    plt.xticks(rotation=45)
+    plt.legend(title='Workload', bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0, fontsize='small')
+    plt.tight_layout()
+    plt.savefig(f"{failure_type}_failure_cluster_workload_analysis_filtered.png")
+    plt.show()
+#--------------------------------------------------------------------------------------------------------------#
 
 
 # Stampa dei clusters creati
