@@ -270,14 +270,14 @@ plt.show()
 
 # #--------------------------------------------------------------------------------------------------------------#
 
-# Filtro per verb = 'path' o 'post' e userAgent = 'kube-controller-manager'
+# Filtro per verb = 'patch' o 'post' e userAgent = 'kube-controller-manager'
 filtered_df = df[
-    (df['verb'].isin(['PATH', 'POST'])) & 
+    (df['verb'].isin(['PATCH', 'POST'])) & 
     (df['userAgent'].str.contains('kube-controller-manager'))
 ]
 print(filtered_df)
 
-# GRAFICO 3: boxplot di cluster per tipologia di failure con i nuovi filtri (verb='path' o 'post', userAgent='kube-controller-manager')
+# GRAFICO 3: boxplot di cluster per tipologia di failure con i nuovi filtri (verb='patch' o 'post', userAgent='kube-controller-manager')
 # Calcolo dei cluster unici dopo il filtro (senza limitare a 20)
 unique_clusters = filtered_df['cluster_id'].unique()
 
