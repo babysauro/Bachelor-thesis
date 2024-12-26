@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='%(message)s')
 
 # Path verso la cartella contenente tutti i log
-in_log_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered"
+in_log_file = "path-dataset"
 
 # Path verso il file delle classificazioni
-classif_file = "/Users/serenasavarese/Desktop/Tesi/Mutiny_dataset_filtered/classif_new_updated.txt"
+classif_file = "path-file-txt-classif"
 
 config = TemplateMinerConfig()
 config.load(f"{dirname(__file__)}/drain3.ini")
